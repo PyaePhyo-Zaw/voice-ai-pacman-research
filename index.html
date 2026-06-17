@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice AI Pac-Man</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="arcade">
+    <header id="heroBar">
+      <div>
+        <h1 id="title">VOICE AI PAC-MAN</h1>
+      </div>
+
+      <button id="fullscreenButton" type="button" class="iconButton" title="Full screen">
+        FULL SCREEN
+      </button>
+    </header>
+
+    <section id="playfield">
+      <div id="screenFrame">
+        <canvas id="game" aria-label="Voice controlled Pac-Man game"></canvas>
+      </div>
+
+      <aside id="sidePanel" aria-label="Game and research controls">
+        <section class="panelBlock">
+          <div class="panelTitle">Game</div>
+          <div class="statGrid">
+            <div>
+              <span class="label">Score</span>
+              <strong id="score">0</strong>
+            </div>
+            <div>
+              <span class="label">Level</span>
+              <strong id="level">1</strong>
+            </div>
+            <div>
+              <span class="label">Lives</span>
+              <strong id="lives">3</strong>
+            </div>
+            <div>
+              <span class="label">High Score</span>
+              <strong id="highScore">0</strong>
+            </div>
+            <div>
+              <span class="label">Best Level</span>
+              <strong id="bestLevel">1</strong>
+            </div>
+            <div>
+              <span class="label">Ghosts</span>
+              <strong id="ghostStatus">Moving</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panelBlock">
+          <div class="voiceControls">
+            <button id="voiceButton" type="button">START VOICE</button>
+          </div>
+
+          <p class="modeNote">
+            Experimental with Web Speech API. True real-time multilingual recognition will be added later using Whisper API / OpenAI Realtime API.
+          </p>
+          <div id="voiceStatus" class="statusPill">Voice: idle</div>
+          <div class="readout">
+            <span class="label">Heard</span>
+            <div id="heard">...</div>
+          </div>
+          <div class="readout commandReadout">
+            <span class="label">Command</span>
+            <div id="command">...</div>
+          </div>
+        </section>
+
+        <section class="panelBlock">
+          <div class="panelTitle">Research Data</div>
+          <div class="researchGrid">
+            <span>Total</span><strong id="totalCommands">0</strong>
+            <span>Successful</span><strong id="successfulCommands">0</strong>
+            <span>Unrecognized</span><strong id="failedCommands">0</strong>
+            <span>English</span><strong id="englishCommands">0</strong>
+            <span>Japanese</span><strong id="japaneseCommands">0</strong>
+            <span>Katakana</span><strong id="katakanaCommands">0</strong>
+            <span>Mixed</span><strong id="mixedCommands">0</strong>
+            <span>Recognition</span><strong id="recognitionMode">mixed-cycle</strong>
+            <span>Transcript Mode</span><strong id="transcriptMode">...</strong>
+            <span>Avg Response</span><strong id="avgResponseTime">0 ms</strong>
+          </div>
+          <div class="miniLog">
+            <span>Last transcript</span>
+            <p id="lastTranscript">...</p>
+            <span>Last command</span>
+            <p id="lastDetectedCommand">...</p>
+          </div>
+          <button id="resetDataButton" type="button" class="resetButton">RESET DATA</button>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
