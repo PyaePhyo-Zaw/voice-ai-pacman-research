@@ -13,31 +13,119 @@ const SETTINGS = {
   maxLevel: 10,
   turnSnapTolerance: 5,
   pacmanCollisionRadius: 10,
-  ghostCollisionRadius: 11
+  ghostCollisionRadius: 11,
+  ghostRespawnDelayFrames: 120,
+  ghostRespawnInvincibleFrames: 180,
+  ghostSpawnCampDistance: tileSize * 4
 };
 
 const VOICE_COMMAND_SELECTION_MODE = "first";
 const STORAGE_KEY = "voiceAiPacmanResearchData";
-const MIXED_MODE_LANGUAGES = ["ja-JP", "en-US"];
-const MIXED_UNRECOGNIZED_SWITCH_LIMIT = 2;
+const DEFAULT_RECOGNITION_LANGUAGE = "en-US";
+const USE_LANGUAGE_SWITCHING = true;
+const MIXED_MODE_LANGUAGES = ["en-US", "ja-JP"];
+const MIXED_UNRECOGNIZED_SWITCH_LIMIT = 1;
+const MIXED_NO_SPEECH_SWITCH_LIMIT = 2;
+const LANGUAGE_SWITCH_COOLDOWN_MS = 1800;
+const MAX_RESEARCH_EVENT_LOG = 300;
 
-const map = [
-  "1111111111111111111",
-  "1222222221222222221",
-  "1211111211212111121",
-  "1322221212212122231",
-  "1211111211112111121",
-  "1222222222222222221",
-  "1211211111111211121",
-  "1221212222221212221",
-  "1111212111121211111",
-  "1222222121222222221",
-  "1211112121212111121",
-  "1322222222222222231",
-  "1211211111111211121",
-  "1221222222222212221",
-  "1111111111111111111"
+const stageMaps = [
+  [
+    "1111111111111111111",
+    "1222222221222222221",
+    "1211111211212111121",
+    "1322221212212122231",
+    "1211111211112111121",
+    "1222222222222222221",
+    "1211211111111211121",
+    "1221212222221212221",
+    "1111212111121211111",
+    "1222222121222222221",
+    "1211112121212111121",
+    "1322222222222222231",
+    "1211211111111211121",
+    "1221222222222212221",
+    "1111111111111111111"
+  ],
+  [
+    "1111111111111111111",
+    "1222222122222122221",
+    "1211122121112121111",
+    "1322122221212221221",
+    "1112121111211121221",
+    "1222221222222212221",
+    "1211111211111211121",
+    "1222222222222222221",
+    "1211111212111211121",
+    "1222221212221212221",
+    "1122121211111212111",
+    "1322122222222222231",
+    "1212111112111112121",
+    "1222222222222222221",
+    "1111111111111111111"
+  ],
+  [
+    "1111111111111111111",
+    "1222222222222222221",
+    "1211111211111211121",
+    "1322221212221212231",
+    "1211121212111212121",
+    "1222122222122222121",
+    "1112121112111122121",
+    "1222222222222222221",
+    "1212111121111212111",
+    "1222122222222212221",
+    "1212121112111111121",
+    "1322221212221212231",
+    "1211111211111211121",
+    "1222222222222222221",
+    "1111111111111111111"
+  ],
+  [
+    "1111111111111111111",
+    "1222222122222122221",
+    "1211122121212121111",
+    "1322122221212221221",
+    "1112121111211121221",
+    "1222122222222212221",
+    "1212111211111211121",
+    "1222221222222212221",
+    "1211111212111211121",
+    "1222221212221212221",
+    "1121121211111212111",
+    "1322222221222222231",
+    "1211111212111211121",
+    "1222222222222222221",
+    "1111111111111111111"
+  ],
+  [
+    "1111111111111111111",
+    "1222222221222222221",
+    "1211111211212111121",
+    "1322221212222122231",
+    "1211121211112121121",
+    "1222122222222222121",
+    "1112121112111122121",
+    "1222222222222222221",
+    "1212111121111212111",
+    "1222221212221212221",
+    "1211121212111211121",
+    "1322122222222222231",
+    "1212111112111112121",
+    "1222222222222222221",
+    "1111111111111111111"
+  ]
 ];
+
+// Stage maps change every two levels and remain fixed for fair research trials.
+function getStageIndex(levelNumber) {
+  const safeLevel = Math.min(Math.max(Number(levelNumber) || 1, 1), SETTINGS.maxLevel);
+  return Math.min(Math.floor((safeLevel - 1) / 2), stageMaps.length - 1);
+}
+
+function getCurrentMap() {
+  return stageMaps[getStageIndex(level)];
+}
 
 const DIRECTIONS = {
   up: { dx: 0, dy: -1 },
@@ -62,6 +150,8 @@ const ui = {
   ghostStatus: document.getElementById("ghostStatus"),
   voiceButton: document.getElementById("voiceButton"),
   voiceStatus: document.getElementById("voiceStatus"),
+  voiceModeLine: document.getElementById("voiceModeLine"),
+  voiceDebug: document.getElementById("voiceDebug"),
   heard: document.getElementById("heard"),
   command: document.getElementById("command"),
   totalCommands: document.getElementById("totalCommands"),
@@ -73,15 +163,32 @@ const ui = {
   mixedCommands: document.getElementById("mixedCommands"),
   recognitionMode: document.getElementById("recognitionMode"),
   transcriptMode: document.getElementById("transcriptMode"),
+  englishRecognitionAttempts: document.getElementById("englishRecognitionAttempts"),
+  japaneseRecognitionAttempts: document.getElementById("japaneseRecognitionAttempts"),
+  languageSwitchCount: document.getElementById("languageSwitchCount"),
+  successfulAfterLanguageSwitch: document.getElementById("successfulAfterLanguageSwitch"),
   avgResponseTime: document.getElementById("avgResponseTime"),
+  successRate: document.getElementById("successRate"),
+  unlockedLevel: document.getElementById("unlockedLevel"),
+  highestLevelReached: document.getElementById("highestLevelReached"),
+  completedLevelCount: document.getElementById("completedLevelCount"),
+  survivalTime: document.getElementById("survivalTime"),
   lastTranscript: document.getElementById("lastTranscript"),
   lastDetectedCommand: document.getElementById("lastDetectedCommand"),
   fullscreenButton: document.getElementById("fullscreenButton"),
-  resetDataButton: document.getElementById("resetDataButton")
+  resetDataButton: document.getElementById("resetDataButton"),
+  levelOverlay: document.getElementById("levelOverlay"),
+  levelOverlayEyebrow: document.getElementById("levelOverlayEyebrow"),
+  levelOverlayTitle: document.getElementById("levelOverlayTitle"),
+  levelOverlayMessage: document.getElementById("levelOverlayMessage"),
+  continueLevelButton: document.getElementById("continueLevelButton"),
+  chooseLevelButton: document.getElementById("chooseLevelButton"),
+  backToStartButton: document.getElementById("backToStartButton"),
+  levelSelectGrid: document.getElementById("levelSelectGrid")
 };
 
-canvas.width = map[0].length * tileSize;
-canvas.height = map.length * tileSize;
+canvas.width = stageMaps[0][0].length * tileSize;
+canvas.height = stageMaps[0].length * tileSize;
 
 let pellets = [];
 let powerPellets = [];
@@ -96,13 +203,27 @@ let countdownTimers = [];
 let voiceRecognition = null;
 let voiceShouldRun = false;
 let isVoiceListening = false;
-let currentRecognitionLanguage = "ja-JP";
+let microphonePermissionGranted = false;
+let microphonePermissionRequest = null;
+let micPermissionState = "unknown";
+let recognitionState = "idle";
+let currentRecognitionLanguage = DEFAULT_RECOGNITION_LANGUAGE;
 let lastTranscriptLanguageMode = "";
 let mixedModeLanguageIndex = 0;
 let mixedModeUnrecognizedStreak = 0;
+let noSpeechStreak = 0;
+let pendingLanguageSwitch = false;
+let languageSwitchInProgress = false;
+let recognitionStartInProgress = false;
+let lastLanguageSwitchTime = 0;
+let awaitingCommandAfterLanguageSwitch = false;
+let voiceModeMessage = "";
 let ghostStatusUpdateCounter = 0;
 let lastGhostDebugLogTime = 0;
 let movementDebugCounter = 0;
+let pendingNextLevel = null;
+let stageIntroTitle = "";
+let stageIntroSubtitle = "";
 
 const pacman = {
   x: tileSize * 1.5,
@@ -173,6 +294,67 @@ const ghosts = [
   }
 ];
 
+const safeGhostSpawnPoints = [
+  { name: "Center", x: tileSize * 9.5, y: tileSize * 7.5 },
+  { name: "Upper-left", x: tileSize * 1.5, y: tileSize * 1.5 },
+  { name: "Upper-right", x: tileSize * 17.5, y: tileSize * 1.5 },
+  { name: "Lower-left", x: tileSize * 1.5, y: tileSize * 13.5 },
+  { name: "Lower-right", x: tileSize * 17.5, y: tileSize * 13.5 }
+];
+
+const levelThemes = [
+  {
+    maxLevel: 2,
+    name: "Blue Neon",
+    background: "#000006",
+    wallFill: "rgba(6, 13, 44, 0.92)",
+    wallStroke: "#156bff",
+    wallInner: "rgba(102, 230, 255, 0.95)",
+    glow: "#00e5ff",
+    atmosphere: "rgba(0, 229, 255, 0.08)"
+  },
+  {
+    maxLevel: 4,
+    name: "Pink Cyber",
+    background: "#08000f",
+    wallFill: "rgba(27, 8, 52, 0.92)",
+    wallStroke: "#8b5cff",
+    wallInner: "rgba(255, 79, 216, 0.86)",
+    glow: "#ff4fd8",
+    atmosphere: "rgba(139, 92, 255, 0.1)"
+  },
+  {
+    maxLevel: 6,
+    name: "Green Matrix",
+    background: "#000b07",
+    wallFill: "rgba(0, 28, 17, 0.92)",
+    wallStroke: "#0bd66f",
+    wallInner: "rgba(153, 255, 196, 0.92)",
+    glow: "#45ff9a",
+    atmosphere: "rgba(69, 255, 154, 0.09)"
+  },
+  {
+    maxLevel: 8,
+    name: "Red Danger",
+    background: "#120003",
+    wallFill: "rgba(48, 4, 14, 0.92)",
+    wallStroke: "#ff3d4e",
+    wallInner: "rgba(255, 157, 59, 0.88)",
+    glow: "#ff3d4e",
+    atmosphere: "rgba(255, 61, 78, 0.1)"
+  },
+  {
+    maxLevel: 10,
+    name: "Gold Final",
+    background: "#100d00",
+    wallFill: "rgba(42, 33, 5, 0.92)",
+    wallStroke: "#ffe84a",
+    wallInner: "rgba(255, 157, 59, 0.9)",
+    glow: "#ffe84a",
+    atmosphere: "rgba(255, 232, 74, 0.1)"
+  }
+];
+
 const defaultResearchData = {
   totalVoiceCommands: 0,
   successfulCommands: 0,
@@ -190,8 +372,26 @@ const defaultResearchData = {
   lastNormalizedText: "",
   currentRecognitionMode: "mixed-cycle",
   lastTranscriptLanguageMode: "",
+  lastRecognitionLanguage: "",
+  lastCommandRecognized: false,
+  lastLanguageSwitchTriggered: false,
+  lastResponseTimeMs: 0,
+  englishRecognitionAttempts: 0,
+  japaneseRecognitionAttempts: 0,
+  languageSwitchCount: 0,
+  successfulAfterLanguageSwitch: 0,
+  voiceCommandEvents: [],
   highScore: 0,
-  bestLevel: 1
+  bestLevel: 1,
+  unlockedLevel: 1,
+  sessionStartTime: 0,
+  sessionEndTime: 0,
+  survivalTimeMs: 0,
+  highestLevelReached: 1,
+  completedLevelCount: 0,
+  gameCompleted: false,
+  levelAttempts: {},
+  levelClears: {}
 };
 
 let researchData = loadResearchData();
@@ -204,17 +404,78 @@ const SOURCE_TYPE_LABELS = {
   unrecognized: "Unrecognized"
 };
 
+function createDefaultResearchData() {
+  return {
+    ...defaultResearchData,
+    levelAttempts: {},
+    levelClears: {},
+    voiceCommandEvents: []
+  };
+}
+
 const pronunciationReplacements = [
-  { pattern: /リスタート|りすたーと/g, replacement: " restart ", command: "RESTART" },
-  { pattern: /スタート|すたーと/g, replacement: " start ", command: "START" },
-  { pattern: /ポーズ|ぽーず/g, replacement: " pause ", command: "PAUSE" },
-  { pattern: /フライト|ふらいと|ブライト|ぶらいと|ライト|らいと/g, replacement: " right ", command: "RIGHT" },
-  { pattern: /レフト|れふと|リフト|りふと/g, replacement: " left ", command: "LEFT" },
-  { pattern: /アップ|あっぷ/g, replacement: " up ", command: "UP" },
-  { pattern: /ダウン|だうん/g, replacement: " down ", command: "DOWN" }
+  { pattern: /リ\s*ス\s*タ\s*ー\s*ト|り\s*す\s*た\s*ー\s*と/g, replacement: " restart ", command: "RESTART" },
+  { pattern: /ス\s*タ\s*ー\s*ト|す\s*た\s*ー\s*と/g, replacement: " start ", command: "START" },
+  { pattern: /ポ\s*ー\s*ズ|ぽ\s*ー\s*ず/g, replacement: " pause ", command: "PAUSE" },
+  { pattern: /フ\s*ラ\s*イ\s*ト|ふ\s*ら\s*い\s*と|ブ\s*ラ\s*イ\s*ト|ぶ\s*ら\s*い\s*と|ラ\s*イ\s*ト|ら\s*い\s*と/g, replacement: " right ", command: "RIGHT" },
+  { pattern: /レ\s*フ\s*ト|れ\s*ふ\s*と|リ\s*フ\s*ト|り\s*ふ\s*と|ラ\s*フ\s*ト|ら\s*ふ\s*と/g, replacement: " left ", command: "LEFT" },
+  { pattern: /ア\s*ッ\s*プ|あ\s*っ\s*ぷ|ア\s*プ|あ\s*ぷ/g, replacement: " up ", command: "UP" },
+  { pattern: /ダ\s*ウ\s*ン|だ\s*う\s*ん/g, replacement: " down ", command: "DOWN" }
 ];
 
 const voicePatterns = [
+  {
+    command: "CHOOSE_LEVEL",
+    patterns: [/\bchoose\s+level\b/g, /\blevel\s+select\b/g, /\bselect\s+level\b/g, /レベル選択/g]
+  },
+  {
+    command: "CONTINUE",
+    patterns: [/\bcontinue\b/g, /\bnext\b/g, /\bgo\s+next\b/g, /続ける/g, /次/g]
+  },
+  {
+    command: "BACK",
+    patterns: [/\bback\b/g, /\bback\s+to\s+start\b/g, /\breturn\b/g, /戻る/g]
+  },
+  {
+    command: "LEVEL_10",
+    patterns: [/\blevel\s*(?:ten|10)\b/g, /レベル\s*10/g]
+  },
+  {
+    command: "LEVEL_9",
+    patterns: [/\blevel\s*(?:nine|9)\b/g, /レベル\s*9(?!\d)/g]
+  },
+  {
+    command: "LEVEL_8",
+    patterns: [/\blevel\s*(?:eight|8)\b/g, /レベル\s*8(?!\d)/g]
+  },
+  {
+    command: "LEVEL_7",
+    patterns: [/\blevel\s*(?:seven|7)\b/g, /レベル\s*7(?!\d)/g]
+  },
+  {
+    command: "LEVEL_6",
+    patterns: [/\blevel\s*(?:six|6)\b/g, /レベル\s*6(?!\d)/g]
+  },
+  {
+    command: "LEVEL_5",
+    patterns: [/\blevel\s*(?:five|5)\b/g, /レベル\s*5(?!\d)/g]
+  },
+  {
+    command: "LEVEL_4",
+    patterns: [/\blevel\s*(?:four|4)\b/g, /レベル\s*4(?!\d)/g]
+  },
+  {
+    command: "LEVEL_3",
+    patterns: [/\blevel\s*(?:three|3)\b/g, /レベル\s*3(?!\d)/g]
+  },
+  {
+    command: "LEVEL_2",
+    patterns: [/\blevel\s*(?:two|2)\b/g, /レベル\s*2(?!\d)/g]
+  },
+  {
+    command: "LEVEL_1",
+    patterns: [/\blevel\s*(?:one|1)\b/g, /レベル\s*1(?!\d)/g]
+  },
   {
     command: "RESTART",
     patterns: [/\brestart\b/g, /\btry\s+again\b/g, /\bretry\b/g, /もう一回/g, /もう一度/g, /やり直し/g]
@@ -226,6 +487,44 @@ const voicePatterns = [
   {
     command: "START",
     patterns: [/\bstart\b/g, /\bbegin\b/g, /\bplay\b/g, /\bresume\b/g, /開始/g, /始めて/g, /始める/g, /再開/g]
+  },
+  {
+    command: "UP",
+    patterns: [
+      /\b(?:go|move|turn)\s*\u3046\u3048/g,
+      /\u3046\u3048\u306b\u884c\u3063\u3066/g,
+      /\u3046\u3048\u3078/g,
+      /(?:^|[\s、。])\u3046\u3048(?:$|[\s、。])/g
+    ]
+  },
+  {
+    command: "DOWN",
+    patterns: [
+      /\b(?:go|move|turn)\s*\u3057\u305f/g,
+      /\u3057\u305f\u306b\u884c\u3063\u3066/g,
+      /\u3057\u305f\u3078/g,
+      /(?:^|[\s、。])\u3057\u305f(?:$|[\s、。])/g
+    ]
+  },
+  {
+    command: "LEFT",
+    patterns: [
+      /\b(?:go|move|turn)\s*\u3072\u3060\u308a/g,
+      /\u3072\u3060\u308a\u306b\u884c\u3063\u3066/g,
+      /\u3072\u3060\u308a\u306b\u66f2\u304c\u3063\u3066/g,
+      /\u3072\u3060\u308a\u3078/g,
+      /(?:^|[\s、。])\u3072\u3060\u308a(?:$|[\s、。])/g
+    ]
+  },
+  {
+    command: "RIGHT",
+    patterns: [
+      /\b(?:go|move|turn)\s*\u307f\u304e/g,
+      /\u307f\u304e\u306b\u884c\u3063\u3066/g,
+      /\u307f\u304e\u306b\u66f2\u304c\u3063\u3066/g,
+      /\u307f\u304e\u3078/g,
+      /(?:^|[\s、。])\u307f\u304e(?:$|[\s、。])/g
+    ]
   },
   {
     command: "UP",
@@ -248,19 +547,33 @@ const voicePatterns = [
 function loadResearchData() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return { ...defaultResearchData };
+    if (!saved) return createDefaultResearchData();
 
     const parsed = JSON.parse(saved);
-    const merged = { ...defaultResearchData, ...parsed };
+    const merged = {
+      ...createDefaultResearchData(),
+      ...parsed,
+      levelAttempts: { ...(parsed.levelAttempts || {}) },
+      levelClears: { ...(parsed.levelClears || {}) },
+      voiceCommandEvents: Array.isArray(parsed.voiceCommandEvents)
+        ? parsed.voiceCommandEvents
+        : []
+    };
 
     if (parsed.unrecognizedCommandCount === undefined) {
       merged.unrecognizedCommandCount = merged.failedCommands;
     }
 
+    merged.unlockedLevel = Math.min(Math.max(Number(merged.unlockedLevel) || 1, 1), SETTINGS.maxLevel);
+    merged.highestLevelReached = Math.min(
+      Math.max(Number(merged.highestLevelReached) || Number(merged.bestLevel) || 1, 1),
+      SETTINGS.maxLevel
+    );
+
     return merged;
   } catch (error) {
     console.warn("Research data could not be loaded.", error);
-    return { ...defaultResearchData };
+    return createDefaultResearchData();
   }
 }
 
@@ -270,6 +583,75 @@ function saveResearchData() {
   } catch (error) {
     console.warn("Research data could not be saved.", error);
   }
+}
+
+function getUnlockedLevel() {
+  return Math.min(Math.max(Number(researchData.unlockedLevel) || 1, 1), SETTINGS.maxLevel);
+}
+
+function unlockLevel(levelNumber) {
+  const nextUnlockedLevel = Math.min(Math.max(levelNumber, 1), SETTINGS.maxLevel);
+
+  if (nextUnlockedLevel > getUnlockedLevel()) {
+    researchData.unlockedLevel = nextUnlockedLevel;
+    saveResearchData();
+  }
+}
+
+function updateHighestLevelReached(levelNumber) {
+  const reachedLevel = Math.min(Math.max(levelNumber, 1), SETTINGS.maxLevel);
+
+  if (reachedLevel > researchData.highestLevelReached) {
+    researchData.highestLevelReached = reachedLevel;
+    saveResearchData();
+  }
+}
+
+function recordLevelAttempt(levelNumber) {
+  const key = String(levelNumber);
+  researchData.levelAttempts[key] = (researchData.levelAttempts[key] || 0) + 1;
+  updateHighestLevelReached(levelNumber);
+  saveResearchData();
+}
+
+function recordLevelClear(levelNumber) {
+  const key = String(levelNumber);
+  researchData.levelClears[key] = (researchData.levelClears[key] || 0) + 1;
+  researchData.completedLevelCount++;
+  saveResearchData();
+}
+
+function startResearchSession(startLevel) {
+  const now = Date.now();
+  researchData.sessionStartTime = now;
+  researchData.sessionEndTime = 0;
+  researchData.survivalTimeMs = 0;
+  researchData.gameCompleted = false;
+  researchData.currentRecognitionMode = getRecognitionModeForResearch();
+  recordLevelAttempt(startLevel);
+}
+
+function finishResearchSession(gameCompleted) {
+  const now = Date.now();
+  const startTime = researchData.sessionStartTime || now;
+
+  researchData.sessionEndTime = now;
+  researchData.survivalTimeMs = Math.max(0, now - startTime);
+  researchData.gameCompleted = Boolean(gameCompleted);
+  saveResearchData();
+}
+
+function getCommandSuccessRate() {
+  if (researchData.totalVoiceCommands === 0) return 0;
+  return Math.round((researchData.successfulCommands / researchData.totalVoiceCommands) * 100);
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.round((milliseconds || 0) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 function updateResearchBestStats() {
@@ -285,12 +667,19 @@ function updateResearchBestStats() {
     changed = true;
   }
 
+  if (level > researchData.highestLevelReached) {
+    researchData.highestLevelReached = level;
+    changed = true;
+  }
+
   if (changed) saveResearchData();
 }
 
-function recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLanguageMode) {
+function recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLanguageMode, languageSwitchTriggered = false) {
   const command = analysis.command;
   const sourceType = analysis.sourceType || "unrecognized";
+  const recognitionLanguage = transcriptLanguageMode || currentRecognitionLanguage;
+  const commandRecognized = Boolean(command);
 
   researchData.totalVoiceCommands++;
   researchData.lastTranscript = transcript;
@@ -298,13 +687,26 @@ function recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLang
   researchData.lastSourceType = sourceType;
   researchData.lastNormalizedText = analysis.normalizedText || "";
   researchData.currentRecognitionMode = getRecognitionModeForResearch();
-  researchData.lastTranscriptLanguageMode = transcriptLanguageMode || currentRecognitionLanguage;
+  lastTranscriptLanguageMode = recognitionLanguage;
+  researchData.lastTranscriptLanguageMode = lastTranscriptLanguageMode;
+  researchData.lastRecognitionLanguage = recognitionLanguage;
+  researchData.lastCommandRecognized = commandRecognized;
+  researchData.lastLanguageSwitchTriggered = Boolean(languageSwitchTriggered);
+  researchData.lastResponseTimeMs = responseTimeMs;
+
+  if (recognitionLanguage === "en-US") researchData.englishRecognitionAttempts++;
+  if (recognitionLanguage === "ja-JP") researchData.japaneseRecognitionAttempts++;
 
   if (command) {
     researchData.successfulCommands++;
     researchData.totalResponseTimeMs += responseTimeMs;
     researchData.averageCommandResponseTimeMs =
       researchData.totalResponseTimeMs / researchData.successfulCommands;
+
+    if (awaitingCommandAfterLanguageSwitch) {
+      researchData.successfulAfterLanguageSwitch++;
+      awaitingCommandAfterLanguageSwitch = false;
+    }
 
     if (sourceType === "english") researchData.englishCommandCount++;
     if (sourceType === "japanese") researchData.japaneseCommandCount++;
@@ -313,6 +715,21 @@ function recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLang
   } else {
     researchData.failedCommands++;
     researchData.unrecognizedCommandCount++;
+  }
+
+  researchData.voiceCommandEvents.push({
+    timestamp: new Date().toISOString(),
+    transcript,
+    detectedCommand: command || "UNRECOGNIZED",
+    sourceType,
+    recognitionLanguage,
+    recognized: commandRecognized,
+    languageSwitchTriggered: Boolean(languageSwitchTriggered),
+    responseTimeMs: Math.round(responseTimeMs)
+  });
+
+  if (researchData.voiceCommandEvents.length > MAX_RESEARCH_EVENT_LOG) {
+    researchData.voiceCommandEvents = researchData.voiceCommandEvents.slice(-MAX_RESEARCH_EVENT_LOG);
   }
 
   saveResearchData();
@@ -324,10 +741,21 @@ function recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLang
     successfulCommands: researchData.successfulCommands,
     failedCommands: researchData.failedCommands,
     unrecognizedCommandCount: researchData.unrecognizedCommandCount,
+    successRate: `${getCommandSuccessRate()}%`,
     englishCommandCount: researchData.englishCommandCount,
     japaneseCommandCount: researchData.japaneseCommandCount,
     katakanaCommandCount: researchData.katakanaCommandCount,
     mixedCommandCount: researchData.mixedCommandCount,
+    englishRecognitionAttempts: researchData.englishRecognitionAttempts,
+    japaneseRecognitionAttempts: researchData.japaneseRecognitionAttempts,
+    languageSwitchCount: researchData.languageSwitchCount,
+    successfulAfterLanguageSwitch: researchData.successfulAfterLanguageSwitch,
+    lastRecognitionLanguage: researchData.lastRecognitionLanguage,
+    lastLanguageSwitchTriggered: researchData.lastLanguageSwitchTriggered,
+    unlockedLevel: researchData.unlockedLevel,
+    highestLevelReached: researchData.highestLevelReached,
+    completedLevelCount: researchData.completedLevelCount,
+    gameCompleted: researchData.gameCompleted,
     lastTranscript: researchData.lastTranscript,
     lastDetectedCommand: researchData.lastDetectedCommand,
     lastSourceType: SOURCE_TYPE_LABELS[sourceType],
@@ -342,12 +770,21 @@ function updateResearchPanel() {
   ui.totalCommands.textContent = researchData.totalVoiceCommands;
   ui.successfulCommands.textContent = researchData.successfulCommands;
   ui.failedCommands.textContent = researchData.unrecognizedCommandCount;
+  ui.successRate.textContent = `${getCommandSuccessRate()}%`;
   ui.englishCommands.textContent = researchData.englishCommandCount;
   ui.japaneseCommands.textContent = researchData.japaneseCommandCount;
   ui.katakanaCommands.textContent = researchData.katakanaCommandCount;
   ui.mixedCommands.textContent = researchData.mixedCommandCount;
+  ui.unlockedLevel.textContent = getUnlockedLevel();
+  ui.highestLevelReached.textContent = researchData.highestLevelReached;
+  ui.completedLevelCount.textContent = researchData.completedLevelCount;
+  ui.survivalTime.textContent = formatDuration(researchData.survivalTimeMs);
   ui.recognitionMode.textContent = researchData.currentRecognitionMode || getRecognitionModeForResearch();
   ui.transcriptMode.textContent = researchData.lastTranscriptLanguageMode || lastTranscriptLanguageMode || "...";
+  ui.englishRecognitionAttempts.textContent = researchData.englishRecognitionAttempts;
+  ui.japaneseRecognitionAttempts.textContent = researchData.japaneseRecognitionAttempts;
+  ui.languageSwitchCount.textContent = researchData.languageSwitchCount;
+  ui.successfulAfterLanguageSwitch.textContent = researchData.successfulAfterLanguageSwitch;
   ui.avgResponseTime.textContent = `${Math.round(researchData.averageCommandResponseTimeMs)} ms`;
   ui.lastTranscript.textContent = researchData.lastTranscript || "...";
   ui.lastDetectedCommand.textContent = researchData.lastDetectedCommand
@@ -359,7 +796,7 @@ function updateResearchPanel() {
 
 function resetResearchData() {
   researchData = {
-    ...defaultResearchData,
+    ...createDefaultResearchData(),
     currentRecognitionMode: getRecognitionModeForResearch()
   };
 
@@ -370,6 +807,8 @@ function resetResearchData() {
   ui.command.textContent = "...";
   ui.lastTranscript.textContent = "...";
   ui.lastDetectedCommand.textContent = "...";
+
+  if (gameState === "levelselect") renderLevelSelect();
 }
 
 function normalizeVoiceText(text) {
@@ -395,23 +834,26 @@ function detectSourceType(originalText, normalizedText, command) {
   if (!command) return "unrecognized";
 
   const baseText = normalizeVoiceText(originalText);
-  const hasEnglishCommand = /\b(right|light|write|left|up|app|down|start|play|begin|resume|pause|hold|restart|retry|go|move|turn)\b|\btry\s+again\b|\bstop\s+temporarily\b/.test(baseText);
+  const hasEnglishCommand = /\b(right|light|write|left|up|app|down|start|play|begin|resume|pause|hold|restart|retry|go|move|turn|continue|next|back|return|choose|select|level|one|two|three|four|five|six|seven|eight|nine|ten)\b|\btry\s+again\b|\bstop\s+temporarily\b/.test(baseText);
   const hasKatakanaCommand = pronunciationReplacements.some(replacement => {
     replacement.pattern.lastIndex = 0;
     return replacement.pattern.test(baseText);
   });
-  const hasJapaneseCommand = /右|左|上|下|開始|始めて|始める|再開|一時停止|止まって|待って|もう一回|もう一度|やり直し/.test(baseText);
+  const hasJapaneseCommand = /右|左|上|下|開始|始めて|始める|再開|一時停止|止まって|待って|もう一回|もう一度|やり直し|続ける|次|戻る|レベル選択|レベル/.test(baseText);
   const hasJapaneseGrammar = /に|へ|行って|曲がって/.test(baseText);
+
+  const hasHiraganaDirection = /\u307f\u304e|\u3072\u3060\u308a|\u3046\u3048|\u3057\u305f/.test(baseText);
 
   pronunciationReplacements.forEach(replacement => {
     replacement.pattern.lastIndex = 0;
   });
 
-  if (hasEnglishCommand && (hasJapaneseCommand || hasJapaneseGrammar || hasKatakanaCommand)) {
+  if (hasEnglishCommand && (hasJapaneseCommand || hasHiraganaDirection || hasJapaneseGrammar || hasKatakanaCommand)) {
     return "mixed";
   }
 
   if (hasKatakanaCommand) return "katakana";
+  if (hasHiraganaDirection) return "japanese";
   if (hasJapaneseCommand || /右|左|上|下/.test(normalizedText)) return "japanese";
   if (hasEnglishCommand) return "english";
 
@@ -472,6 +914,23 @@ function analyzeVoiceCommand(text) {
   };
 }
 
+function applyWrongLanguageSafety(transcript, analysis, transcriptLanguageMode) {
+  const recognitionLanguage = transcriptLanguageMode || currentRecognitionLanguage;
+  const baseText = normalizeVoiceText(transcript);
+
+  // English recognition can sometimes turn Japanese speech into unrelated English words.
+  // These low-quality transcripts should trigger language cycling, not wrong movement.
+  if (recognitionLanguage === "en-US" && /\bhey\s+daddy\b/.test(baseText)) {
+    return {
+      command: null,
+      sourceType: "unrecognized",
+      normalizedText: analysis.normalizedText
+    };
+  }
+
+  return analysis;
+}
+
 function parseVoiceCommand(text) {
   return analyzeVoiceCommand(text).command;
 }
@@ -479,10 +938,11 @@ function parseVoiceCommand(text) {
 function setupPellets() {
   pellets = [];
   powerPellets = [];
+  const currentMap = getCurrentMap();
 
-  for (let row = 0; row < map.length; row++) {
-    for (let col = 0; col < map[row].length; col++) {
-      const tile = map[row][col];
+  for (let row = 0; row < currentMap.length; row++) {
+    for (let col = 0; col < currentMap[row].length; col++) {
+      const tile = currentMap[row][col];
       const pellet = {
         x: col * tileSize + tileSize / 2,
         y: row * tileSize + tileSize / 2
@@ -508,8 +968,17 @@ function getVoiceModeLabel() {
   return "English Mode";
 }
 
+function getRecognitionLanguageLabel(language) {
+  return language === "ja-JP" ? "Japanese / Katakana" : "English";
+}
+
+function getNextMixedRecognitionLanguage() {
+  return MIXED_MODE_LANGUAGES[(mixedModeLanguageIndex + 1) % MIXED_MODE_LANGUAGES.length];
+}
+
 function getRecognitionLanguage() {
   if (getSelectedVoiceMode() === "mixed") {
+    if (!USE_LANGUAGE_SWITCHING) return DEFAULT_RECOGNITION_LANGUAGE;
     return MIXED_MODE_LANGUAGES[mixedModeLanguageIndex];
   }
 
@@ -519,81 +988,207 @@ function getRecognitionLanguage() {
 function resetMixedModeState() {
   mixedModeLanguageIndex = 0;
   mixedModeUnrecognizedStreak = 0;
+  noSpeechStreak = 0;
   currentRecognitionLanguage = getRecognitionLanguage();
+  pendingLanguageSwitch = false;
+  languageSwitchInProgress = false;
+  awaitingCommandAfterLanguageSwitch = false;
+  voiceModeMessage = "";
   researchData.currentRecognitionMode = getRecognitionModeForResearch();
   saveResearchData();
   updateResearchPanel();
 }
 
-function switchMixedRecognitionLanguage() {
-  if (getSelectedVoiceMode() !== "mixed") return;
-
+function applyMixedRecognitionLanguageSwitch() {
   mixedModeLanguageIndex = (mixedModeLanguageIndex + 1) % MIXED_MODE_LANGUAGES.length;
   mixedModeUnrecognizedStreak = 0;
+  noSpeechStreak = 0;
+  currentRecognitionLanguage = getRecognitionLanguage();
+  lastLanguageSwitchTime = Date.now();
+  awaitingCommandAfterLanguageSwitch = true;
+  researchData.languageSwitchCount++;
+  voiceRecognition = null;
+}
 
-  // Safer than time-based cycling: only restart after repeated unrecognized transcripts.
-  // Timed cycling can interrupt speech mid-command and damage the low-latency feel.
-  if (voiceShouldRun && voiceRecognition) {
+function requestRecognitionLanguageSwitch() {
+  if (getSelectedVoiceMode() !== "mixed") return false;
+  if (!USE_LANGUAGE_SWITCHING) return false;
+  if (!voiceShouldRun) return false;
+  if (languageSwitchInProgress) return false;
+
+  const now = Date.now();
+  if (now - lastLanguageSwitchTime < LANGUAGE_SWITCH_COOLDOWN_MS) return false;
+
+  // Language switching restarts SpeechRecognition only after repeated misses.
+  // It never requests microphone permission again.
+  languageSwitchInProgress = true;
+  pendingLanguageSwitch = true;
+  voiceModeMessage = `Trying ${getRecognitionLanguageLabel(getNextMixedRecognitionLanguage())} recognition...`;
+  updateVoiceModeLine();
+
+  if (voiceRecognition && (isVoiceListening || recognitionStartInProgress)) {
     try {
       voiceRecognition.stop();
     } catch (error) {
-      voiceRecognition.abort();
+      try {
+        voiceRecognition.abort();
+      } catch (abortError) {
+        languageSwitchInProgress = false;
+        pendingLanguageSwitch = false;
+        voiceModeMessage = "";
+        updateVoiceModeLine();
+        return false;
+      }
     }
+  } else {
+    applyMixedRecognitionLanguageSwitch();
+    languageSwitchInProgress = false;
+    pendingLanguageSwitch = false;
+    saveResearchData();
+    updateResearchPanel();
+    if (voiceShouldRun) startVoiceRecognition();
   }
+
+  return true;
+}
+
+function switchMixedRecognitionLanguage() {
+  return requestRecognitionLanguageSwitch();
 }
 
 function updateMixedModeAfterTranscript(analysis) {
-  if (getSelectedVoiceMode() !== "mixed") return;
+  if (getSelectedVoiceMode() !== "mixed") return false;
 
   if (analysis.command) {
     mixedModeUnrecognizedStreak = 0;
-    return;
+    noSpeechStreak = 0;
+    return false;
   }
+
+  if (!USE_LANGUAGE_SWITCHING) return false;
 
   mixedModeUnrecognizedStreak++;
 
   if (mixedModeUnrecognizedStreak >= MIXED_UNRECOGNIZED_SWITCH_LIMIT) {
-    switchMixedRecognitionLanguage();
+    return requestRecognitionLanguageSwitch();
   }
+
+  return false;
+}
+
+async function ensureMicrophonePermission() {
+  if (microphonePermissionGranted) return true;
+  if (microphonePermissionRequest) return microphonePermissionRequest;
+
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices.getUserMedia
+  ) {
+    micPermissionState = "blocked";
+    return false;
+  }
+
+  microphonePermissionRequest = navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      microphonePermissionGranted = true;
+      micPermissionState = "granted";
+      stream.getTracks().forEach(track => track.stop());
+      console.log("Mic permission granted");
+      return true;
+    })
+    .catch(() => {
+      microphonePermissionGranted = false;
+      micPermissionState = "blocked";
+      return false;
+    });
+
+  const permissionAllowed = await microphonePermissionRequest;
+  microphonePermissionRequest = null;
+  return permissionAllowed;
 }
 
 function createVoiceRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  console.log("SpeechRecognition supported:", Boolean(SpeechRecognition));
 
   if (!SpeechRecognition) return null;
 
   const recognition = new SpeechRecognition();
-  currentRecognitionLanguage = getRecognitionLanguage();
+  currentRecognitionLanguage = USE_LANGUAGE_SWITCHING ? getRecognitionLanguage() : DEFAULT_RECOGNITION_LANGUAGE;
   recognition.lang = currentRecognitionLanguage;
   recognition.continuous = true;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
+  console.log("Voice recognition created:", recognition.lang);
 
   recognition.onstart = function() {
     isVoiceListening = true;
+    recognitionStartInProgress = false;
+    recognitionState = "listening";
+    voiceModeMessage = "";
+    console.log("Voice started");
+    console.log("Recognition started");
     updateVoiceStatus();
   };
 
   recognition.onresult = handleVoiceRecognitionResult;
 
   recognition.onerror = function(event) {
-    const message = event.error === "not-allowed"
-      ? "Voice: microphone permission needed"
-      : `Voice: ${event.error}`;
-
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       voiceShouldRun = false;
+      isVoiceListening = false;
+      recognitionStartInProgress = false;
+      languageSwitchInProgress = false;
+      pendingLanguageSwitch = false;
+      voiceModeMessage = "";
+      micPermissionState = "blocked";
+      recognitionState = "error";
+      updateVoiceStatus("Microphone blocked. Please allow microphone access in Chrome site settings.", true);
+      return;
     }
 
-    updateVoiceStatus(message, true);
+    if (event.error === "no-speech") {
+      noSpeechStreak++;
+      recognitionState = "ended";
+      if (noSpeechStreak >= MIXED_NO_SPEECH_SWITCH_LIMIT) {
+        requestRecognitionLanguageSwitch();
+      }
+      updateVoiceStatus();
+      return;
+    }
+
+    if (event.error === "aborted" && (pendingLanguageSwitch || languageSwitchInProgress)) {
+      recognitionState = "ended";
+      updateVoiceStatus();
+      return;
+    }
+
+    recognitionStartInProgress = false;
+    recognitionState = "error";
+    updateVoiceStatus(`Voice error: ${event.error}`, true);
   };
 
   recognition.onend = function() {
     isVoiceListening = false;
+    recognitionStartInProgress = false;
+    recognitionState = "ended";
+    console.log("Voice ended");
+
+    if (pendingLanguageSwitch) {
+      pendingLanguageSwitch = false;
+      applyMixedRecognitionLanguageSwitch();
+      languageSwitchInProgress = false;
+      saveResearchData();
+      updateResearchPanel();
+    }
+
     updateVoiceStatus();
 
     if (voiceShouldRun) {
-      setTimeout(startVoiceRecognition, 250);
+      setTimeout(() => {
+        if (voiceShouldRun) startVoiceRecognition();
+      }, 300);
     }
   };
 
@@ -602,54 +1197,106 @@ function createVoiceRecognition() {
 
 function startVoiceRecognition() {
   if (!voiceShouldRun) return;
+  if (isVoiceListening || recognitionStartInProgress) return;
 
-  voiceRecognition = createVoiceRecognition();
+  if (!voiceRecognition) {
+    voiceRecognition = createVoiceRecognition();
+  } else {
+    currentRecognitionLanguage = USE_LANGUAGE_SWITCHING ? getRecognitionLanguage() : DEFAULT_RECOGNITION_LANGUAGE;
+    voiceRecognition.lang = currentRecognitionLanguage;
+  }
 
   if (!voiceRecognition) {
     voiceShouldRun = false;
-    updateVoiceStatus("Voice: Web Speech API unavailable", true);
+    recognitionState = "error";
+    updateVoiceStatus("Voice: Web Speech API unavailable in this browser.", true);
     return;
   }
 
   try {
+    recognitionState = "starting";
+    recognitionStartInProgress = true;
+    updateVoiceStatus();
     voiceRecognition.start();
   } catch (error) {
-    updateVoiceStatus("Voice: restart pending", true);
+    recognitionStartInProgress = false;
+    recognitionState = "error";
+    updateVoiceStatus(`Voice: ${error.message || "could not start"}`, true);
   }
 }
 
-function startVoice() {
+async function startVoice() {
   if (voiceShouldRun) {
     stopVoice();
     return;
   }
 
+  console.log("START VOICE clicked");
   resetMixedModeState();
   voiceShouldRun = true;
+  recognitionState = "starting";
+  updateVoiceStatus("Voice: requesting microphone");
+
+  const hasPermission = await ensureMicrophonePermission();
+  if (!voiceShouldRun) {
+    recognitionState = "idle";
+    updateVoiceStatus();
+    return;
+  }
+
+  if (!hasPermission) {
+    voiceShouldRun = false;
+    isVoiceListening = false;
+    recognitionState = "error";
+    updateVoiceStatus("Microphone blocked. Please allow microphone access in Chrome site settings.", true);
+    return;
+  }
+
   startVoiceRecognition();
 }
 
 function stopVoice() {
   voiceShouldRun = false;
+  pendingLanguageSwitch = false;
+  languageSwitchInProgress = false;
+  recognitionStartInProgress = false;
+  voiceModeMessage = "";
 
   if (voiceRecognition) {
+    const recognition = voiceRecognition;
+    voiceRecognition = null;
+
     try {
-      voiceRecognition.stop();
+      recognition.stop();
     } catch (error) {
-      voiceRecognition.abort();
+      recognition.abort();
     }
   }
 
   isVoiceListening = false;
+  recognitionState = "idle";
   updateVoiceStatus();
 }
 
 function handleVoiceRecognitionResult(event) {
-  for (let i = event.resultIndex; i < event.results.length; i++) {
-    if (!event.results[i].isFinal) continue;
+  console.log("Recognition result event", event);
 
-    const transcript = String(event.results[i][0].transcript);
-    handleTranscript(transcript, currentRecognitionLanguage);
+  let interimTranscript = "";
+
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    const transcript = String(event.results[i][0].transcript).trim();
+    if (!transcript) continue;
+
+    if (event.results[i].isFinal) {
+      console.log("Transcript:", transcript);
+      handleTranscript(transcript, currentRecognitionLanguage);
+    } else {
+      interimTranscript += `${transcript} `;
+    }
+  }
+
+  if (interimTranscript.trim()) {
+    ui.heard.textContent = interimTranscript.trim();
   }
 }
 
@@ -662,16 +1309,20 @@ async function processTranscriptWithFutureAI(transcript) {
 
 function handleTranscript(transcript, transcriptLanguageMode) {
   const startedAt = performance.now();
-  const analysis = analyzeVoiceCommand(transcript);
+  let analysis = analyzeVoiceCommand(transcript);
+  analysis = applyWrongLanguageSafety(transcript, analysis, transcriptLanguageMode);
+
+  console.log("Transcript:", transcript);
+  console.log("Detected command:", analysis.command);
 
   if (analysis.command) {
     executeGameCommand(analysis.command, "voice");
   }
 
   const responseTimeMs = performance.now() - startedAt;
+  const languageSwitchTriggered = updateMixedModeAfterTranscript(analysis);
   updateTranscriptDisplay(transcript, analysis);
-  recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLanguageMode);
-  updateMixedModeAfterTranscript(analysis);
+  recordVoiceCommand(transcript, analysis, responseTimeMs, transcriptLanguageMode, languageSwitchTriggered);
 }
 
 function processTranscript(transcript, transcriptLanguageMode) {
@@ -685,6 +1336,31 @@ function updateTranscriptDisplay(transcript, analysis) {
     : "Command: UNRECOGNIZED\nType: Unrecognized";
 }
 
+function isSpeechRecognitionSupported() {
+  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function updateVoiceDebug() {
+  if (!ui.voiceDebug) return;
+
+  ui.voiceDebug.textContent =
+    `Browser support: ${isSpeechRecognitionSupported() ? "yes" : "no"} | ` +
+    `Mic permission: ${micPermissionState} | ` +
+    `Recognition state: ${recognitionState} | ` +
+    `Language: ${currentRecognitionLanguage}`;
+}
+
+function updateVoiceModeLine() {
+  if (!ui.voiceModeLine) return;
+
+  if (voiceModeMessage) {
+    ui.voiceModeLine.textContent = voiceModeMessage;
+    return;
+  }
+
+  ui.voiceModeLine.textContent = `Listening mode: ${getRecognitionLanguageLabel(currentRecognitionLanguage)}`;
+}
+
 function updateVoiceStatus(message, isError = false) {
   ui.voiceButton.classList.toggle("listening", voiceShouldRun);
   ui.voiceButton.textContent = voiceShouldRun ? "STOP VOICE" : "START VOICE";
@@ -692,30 +1368,237 @@ function updateVoiceStatus(message, isError = false) {
 
   if (message) {
     ui.voiceStatus.textContent = message;
+    updateVoiceModeLine();
+    updateVoiceDebug();
     return;
   }
 
   if (voiceShouldRun && isVoiceListening) {
-    ui.voiceStatus.textContent = `Voice: listening (${getVoiceModeLabel()} / ${currentRecognitionLanguage})`;
+    ui.voiceStatus.textContent = "Voice: listening";
   } else if (voiceShouldRun) {
-    ui.voiceStatus.textContent = `Voice: reconnecting (${getVoiceModeLabel()})`;
+    ui.voiceStatus.textContent = "Voice: listening";
   } else {
     ui.voiceStatus.textContent = "Voice: idle";
   }
+
+  updateVoiceModeLine();
+  updateVoiceDebug();
+}
+
+function hasActiveResearchSession() {
+  return Boolean(researchData.sessionStartTime && !researchData.sessionEndTime);
+}
+
+function finishResearchSessionIfActive(gameCompleted) {
+  if (hasActiveResearchSession()) finishResearchSession(gameCompleted);
+}
+
+function setLevelOverlayVisible(visible) {
+  if (!ui.levelOverlay) return;
+  ui.levelOverlay.classList.toggle("hidden", !visible);
+  ui.levelOverlay.hidden = !visible;
+}
+
+function setLevelSelectVisible(visible) {
+  if (!ui.levelSelectGrid) return;
+  ui.levelSelectGrid.classList.toggle("hidden", !visible);
+  ui.levelSelectGrid.hidden = !visible;
+}
+
+function setLevelOverlayText(eyebrow, title, message) {
+  ui.levelOverlayEyebrow.textContent = eyebrow;
+  ui.levelOverlayTitle.textContent = title;
+  ui.levelOverlayMessage.textContent = message;
+}
+
+function renderLevelSelect() {
+  const unlockedLevel = getUnlockedLevel();
+  ui.levelSelectGrid.innerHTML = "";
+
+  for (let levelNumber = 1; levelNumber <= SETTINGS.maxLevel; levelNumber++) {
+    const button = document.createElement("button");
+    const unlocked = levelNumber <= unlockedLevel;
+
+    button.type = "button";
+    button.textContent = unlocked ? `LEVEL ${levelNumber}` : `LOCKED ${levelNumber}`;
+    button.disabled = !unlocked;
+    button.dataset.level = String(levelNumber);
+    button.addEventListener("click", () => selectLevel(levelNumber));
+    ui.levelSelectGrid.appendChild(button);
+  }
+}
+
+function showLevelClearScreen() {
+  const nextLevel = Math.min(level + 1, SETTINGS.maxLevel);
+  pendingNextLevel = nextLevel;
+
+  setLevelOverlayText(
+    "LEVEL CLEAR",
+    `LEVEL ${level} COMPLETE!`,
+    `Level ${nextLevel} is now unlocked. Continue the current run or choose an unlocked level.`
+  );
+
+  ui.continueLevelButton.hidden = false;
+  ui.continueLevelButton.textContent = `CONTINUE TO LEVEL ${nextLevel}`;
+  ui.chooseLevelButton.hidden = false;
+  ui.backToStartButton.hidden = false;
+  setLevelSelectVisible(false);
+  setLevelOverlayVisible(true);
+}
+
+function showFinalClearScreen() {
+  pendingNextLevel = null;
+
+  setLevelOverlayText(
+    "FINAL CLEAR",
+    "ALL LEVELS COMPLETE!",
+    "Research run complete. Level 10 will not repeat."
+  );
+
+  ui.continueLevelButton.hidden = true;
+  ui.chooseLevelButton.hidden = false;
+  ui.backToStartButton.hidden = false;
+  setLevelSelectVisible(false);
+  setLevelOverlayVisible(true);
+}
+
+function showLevelSelectScreen() {
+  gameState = "levelselect";
+  renderLevelSelect();
+  setLevelOverlayText(
+    "CHOOSE LEVEL",
+    "SELECT UNLOCKED LEVEL",
+    `Unlocked through Level ${getUnlockedLevel()}. Locked levels cannot be selected.`
+  );
+
+  ui.continueLevelButton.hidden = !(pendingNextLevel && pendingNextLevel <= getUnlockedLevel());
+  ui.chooseLevelButton.hidden = true;
+  ui.backToStartButton.hidden = false;
+  setLevelSelectVisible(true);
+  setLevelOverlayVisible(true);
+}
+
+function hideLevelOverlay() {
+  setLevelOverlayVisible(false);
+  setLevelSelectVisible(false);
+}
+
+function canSelectLevelNow() {
+  return gameState === "start" ||
+    gameState === "levelclear" ||
+    gameState === "levelselect" ||
+    gameState === "finalclear" ||
+    gameState === "gameover";
+}
+
+function selectLevel(levelNumber) {
+  if (!canSelectLevelNow()) return false;
+  if (levelNumber < 1 || levelNumber > getUnlockedLevel()) return false;
+
+  startGame(levelNumber);
+  return true;
+}
+
+function continueToNextLevel() {
+  if (gameState !== "levelclear" && gameState !== "levelselect") return false;
+  if (!pendingNextLevel || pendingNextLevel > getUnlockedLevel()) return false;
+
+  level = pendingNextLevel;
+  pendingNextLevel = null;
+  frightenedTimer = 0;
+  countdownText = "";
+  effects = [];
+
+  hideLevelOverlay();
+  resetPositions();
+  setupPellets();
+  recordLevelAttempt(level);
+  updateUI();
+  startStageIntro();
+  return true;
+}
+
+function backToStart() {
+  finishResearchSessionIfActive(false);
+  clearCountdownTimers();
+  pendingNextLevel = null;
+  score = 0;
+  level = 1;
+  lives = SETTINGS.lives;
+  countdownText = "";
+  frightenedTimer = 0;
+  effects = [];
+  gameState = "start";
+  hideLevelOverlay();
+  resetPositions();
+  setupPellets();
+  updateUI();
+  return true;
+}
+
+function completeCurrentLevel() {
+  clearCountdownTimers();
+  frightenedTimer = 0;
+  addEffect(canvas.width / 2, canvas.height / 2, "text", "#ffe84a", `LEVEL ${level} CLEAR`);
+  recordLevelClear(level);
+
+  if (level >= SETTINGS.maxLevel) {
+    finishResearchSession(true);
+    gameState = "finalclear";
+    showFinalClearScreen();
+    updateUI();
+    return;
+  }
+
+  unlockLevel(level + 1);
+  gameState = "levelclear";
+  showLevelClearScreen();
+  updateUI();
+}
+
+function getLevelFromCommand(command) {
+  const match = /^LEVEL_(\d+)$/.exec(command);
+  return match ? Number(match[1]) : null;
 }
 
 function executeGameCommand(command, source) {
   const direction = COMMAND_TO_DIRECTION[command];
+  const selectedLevel = getLevelFromCommand(command);
 
   if (direction) {
-    if (gameState === "playing") {
+    if (gameState === "playing" || gameState === "stageintro" || gameState === "countdown") {
       pacman.nextDirection = direction;
     }
     return true;
   }
 
+  if (selectedLevel) {
+    return selectLevel(selectedLevel);
+  }
+
+  if (command === "CONTINUE") {
+    return continueToNextLevel();
+  }
+
+  if (command === "BACK") {
+    return backToStart();
+  }
+
+  if (command === "CHOOSE_LEVEL") {
+    if (gameState === "start" || gameState === "levelclear" || gameState === "finalclear" || gameState === "gameover") {
+      showLevelSelectScreen();
+      return true;
+    }
+
+    return false;
+  }
+
   if (command === "START") {
-    if (gameState === "start" || gameState === "gameover") {
+    if (gameState === "levelclear" || (gameState === "levelselect" && pendingNextLevel)) {
+      continueToNextLevel();
+    } else if (gameState === "levelselect") {
+      startGame();
+    } else if (gameState === "start" || gameState === "gameover" || gameState === "finalclear") {
       startGame();
     } else if (gameState === "paused") {
       gameState = "playing";
@@ -754,12 +1637,13 @@ function updateDifficulty() {
 }
 
 function getTile(x, y) {
+  const currentMap = getCurrentMap();
   const col = Math.floor(x / tileSize);
   const row = Math.floor(y / tileSize);
 
-  if (row < 0 || row >= map.length || col < 0 || col >= map[0].length) return "1";
+  if (row < 0 || row >= currentMap.length || col < 0 || col >= currentMap[0].length) return "1";
 
-  return map[row][col];
+  return currentMap[row][col];
 }
 
 function canMove(x, y, direction, speed, radius) {
@@ -948,10 +1832,8 @@ function eatPellets() {
   });
 
   if (pellets.length === 0 && powerPellets.length === 0) {
-    level = Math.min(level + 1, SETTINGS.maxLevel);
-    addEffect(canvas.width / 2, canvas.height / 2, "text", "#00e5ff", `LEVEL ${level}`);
-    resetPositions();
-    setupPellets();
+    completeCurrentLevel();
+    return;
   }
 
   if (ateSomething) updateUI();
@@ -1023,7 +1905,15 @@ function chooseGhostDirection(ghost, allowReverse = false) {
   return bestDirection || chooseRandomDirection(candidates) || ghost.direction;
 }
 
+function updateGhostRespawnTimers(ghost) {
+  if (ghost.respawnTimer > 0) ghost.respawnTimer--;
+  if (ghost.invincibleTimer > 0) ghost.invincibleTimer--;
+}
+
 function moveGhost(ghost) {
+  // Respawn delay stops a defeated ghost from instantly re-entering the maze.
+  if (ghost.respawnTimer > 0) return;
+
   const speed = frightenedTimer > 0 ? ghost.speed * 0.55 : ghost.speed;
   const intersectionTolerance = Math.max(0.45, speed * 0.45);
   const centerX = nearestTileCenter(ghost.x);
@@ -1068,10 +1958,29 @@ function moveGhost(ghost) {
   }
 }
 
-function resetGhost(ghost) {
-  ghost.x = ghost.homeX;
-  ghost.y = ghost.homeY;
+function chooseSafeGhostSpawnPoint(ghost) {
+  const homePoint = { name: "Home", x: ghost.homeX, y: ghost.homeY };
+  const pacmanNearHome = distance(pacman, homePoint) < SETTINGS.ghostSpawnCampDistance;
+
+  if (!pacmanNearHome) return homePoint;
+
+  return safeGhostSpawnPoints.reduce((farthestPoint, point) => (
+    distance(pacman, point) > distance(pacman, farthestPoint) ? point : farthestPoint
+  ), safeGhostSpawnPoints[0]);
+}
+
+// Eaten ghosts use respawn safety; full level/life resets can stay immediate.
+function resetGhost(ghost, useRespawnSafety = true) {
+  const spawnPoint = useRespawnSafety
+    ? chooseSafeGhostSpawnPoint(ghost)
+    : { name: "Home", x: ghost.homeX, y: ghost.homeY };
+
+  ghost.x = spawnPoint.x;
+  ghost.y = spawnPoint.y;
   ghost.direction = ghost.startDirection;
+  ghost.respawnTimer = useRespawnSafety ? SETTINGS.ghostRespawnDelayFrames : 0;
+  ghost.invincibleTimer = useRespawnSafety ? SETTINGS.ghostRespawnInvincibleFrames : 0;
+  ghost.spawnPointName = spawnPoint.name;
   ghost.stuckFrames = 0;
   ghost.lastDebugX = ghost.x;
   ghost.lastDebugY = ghost.y;
@@ -1098,7 +2007,10 @@ function updateGhostDebugStatus() {
       y: Math.round(ghost.y),
       direction: ghost.direction,
       speed: Number(ghost.speed.toFixed(2)),
-      stuckFrames: ghost.stuckFrames
+      stuckFrames: ghost.stuckFrames,
+      respawnTimer: ghost.respawnTimer || 0,
+      invincibleTimer: ghost.invincibleTimer || 0,
+      spawnPoint: ghost.spawnPointName || "Home"
     })));
   }
 }
@@ -1108,6 +2020,9 @@ function checkGhostCollision() {
     if (level < ghost.activeFromLevel) continue;
 
     if (distance(pacman, ghost) < pacman.radius + ghost.radius) {
+      // Respawning ghosts are protected, so spawn camping cannot award points.
+      if (ghost.invincibleTimer > 0 || ghost.respawnTimer > 0) continue;
+
       if (frightenedTimer > 0) {
         score += 200;
         addEffect(ghost.x, ghost.y, "text", "#45ff9a", "200");
@@ -1121,19 +2036,28 @@ function checkGhostCollision() {
   }
 }
 
-function startGame() {
+function startGame(startLevel = 1) {
+  const unlockedLevel = getUnlockedLevel();
+  const requestedLevel = Math.min(Math.max(Number(startLevel) || 1, 1), SETTINGS.maxLevel);
+  const startingLevel = Math.min(requestedLevel, unlockedLevel);
+
+  finishResearchSessionIfActive(false);
   clearCountdownTimers();
+  hideLevelOverlay();
   score = 0;
-  level = 1;
+  level = startingLevel;
   lives = SETTINGS.lives;
   frightenedTimer = 0;
-  gameState = "playing";
+  gameState = "stageintro";
   countdownText = "";
   effects = [];
+  pendingNextLevel = null;
 
   resetPositions();
   setupPellets();
+  startResearchSession(level);
   updateUI();
+  startStageIntro();
 }
 
 function resetPositions() {
@@ -1142,7 +2066,7 @@ function resetPositions() {
   pacman.direction = "right";
   pacman.nextDirection = "right";
 
-  ghosts.forEach(resetGhost);
+  ghosts.forEach(ghost => resetGhost(ghost, false));
   updateDifficulty();
 }
 
@@ -1152,7 +2076,10 @@ function loseLife() {
   updateUI();
 
   if (lives <= 0) {
+    finishResearchSession(false);
     gameState = "gameover";
+    hideLevelOverlay();
+    updateUI();
     return;
   }
 
@@ -1163,6 +2090,17 @@ function loseLife() {
 function clearCountdownTimers() {
   countdownTimers.forEach(timer => clearTimeout(timer));
   countdownTimers = [];
+}
+
+function startStageIntro() {
+  clearCountdownTimers();
+  const theme = getLevelTheme(level);
+
+  stageIntroTitle = `LEVEL ${level}`;
+  stageIntroSubtitle = theme.name;
+  gameState = "stageintro";
+
+  countdownTimers.push(setTimeout(startLifeCountdown, 1200));
 }
 
 function startLifeCountdown() {
@@ -1179,7 +2117,7 @@ function startLifeCountdown() {
     index++;
 
     if (index < steps.length) {
-      countdownTimers.push(setTimeout(showNextStep, 700));
+      countdownTimers.push(setTimeout(showNextStep, 650));
     } else {
       countdownTimers.push(setTimeout(() => {
         if (gameState === "countdown") {
@@ -1220,30 +2158,59 @@ function drawRoundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + radius, y);
 }
 
-function drawMap() {
-  ctx.save();
+function getLevelTheme(levelNumber) {
+  // Theme selection follows the same two-level stage index as the fixed maps.
+  return levelThemes[getStageIndex(levelNumber)] || levelThemes[levelThemes.length - 1];
+}
 
-  for (let row = 0; row < map.length; row++) {
-    for (let col = 0; col < map[row].length; col++) {
-      if (map[row][col] !== "1") continue;
+function drawLevelAtmosphere(theme) {
+  ctx.save();
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, theme.atmosphere);
+  gradient.addColorStop(0.5, "rgba(255, 255, 255, 0.015)");
+  gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = theme.glow;
+  ctx.lineWidth = 1;
+
+  for (let x = -canvas.height; x < canvas.width; x += 48) {
+    ctx.beginPath();
+    ctx.moveTo(x, canvas.height);
+    ctx.lineTo(x + canvas.height, 0);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawMap(theme = getLevelTheme(level)) {
+  ctx.save();
+  const currentMap = getCurrentMap();
+
+  for (let row = 0; row < currentMap.length; row++) {
+    for (let col = 0; col < currentMap[row].length; col++) {
+      if (currentMap[row][col] !== "1") continue;
 
       const x = col * tileSize;
       const y = row * tileSize;
 
-      ctx.shadowColor = "#00e5ff";
+      ctx.shadowColor = theme.glow;
       ctx.shadowBlur = 12;
-      ctx.fillStyle = "rgba(6, 13, 44, 0.92)";
+      ctx.fillStyle = theme.wallFill;
       drawRoundedRect(x + 3, y + 3, tileSize - 6, tileSize - 6, 6);
       ctx.fill();
 
       ctx.lineWidth = 3;
-      ctx.strokeStyle = "#156bff";
+      ctx.strokeStyle = theme.wallStroke;
       drawRoundedRect(x + 4, y + 4, tileSize - 8, tileSize - 8, 5);
       ctx.stroke();
 
       ctx.shadowBlur = 4;
       ctx.lineWidth = 1.2;
-      ctx.strokeStyle = "rgba(102, 230, 255, 0.95)";
+      ctx.strokeStyle = theme.wallInner;
       drawRoundedRect(x + 9, y + 9, tileSize - 18, tileSize - 18, 4);
       ctx.stroke();
     }
@@ -1317,6 +2284,8 @@ function drawPacman() {
 
 function drawGhost(ghost) {
   const frightened = frightenedTimer > 0;
+  const respawning = ghost.respawnTimer > 0 || ghost.invincibleTimer > 0;
+  const respawnBlink = respawning && Math.floor((ghost.respawnTimer + ghost.invincibleTimer) / 10) % 2 === 0;
   const warningFlash = frightened && frightenedTimer < 120 && Math.floor(frightenedTimer / 12) % 2 === 0;
   const bodyColor = frightened ? (warningFlash ? "#ffffff" : "#203fff") : ghost.color;
   const eyeOffset = {
@@ -1325,9 +2294,10 @@ function drawGhost(ghost) {
   };
 
   ctx.save();
+  ctx.globalAlpha = respawning ? (respawnBlink ? 0.35 : 0.68) : 1;
   ctx.translate(ghost.x, ghost.y);
   ctx.shadowColor = bodyColor;
-  ctx.shadowBlur = frightened ? 20 : 15;
+  ctx.shadowBlur = respawning ? 8 : (frightened ? 20 : 15);
   ctx.fillStyle = bodyColor;
 
   ctx.beginPath();
@@ -1452,11 +2422,14 @@ function drawOverlayScreen(title, subtitle, extra = "") {
 }
 
 function drawGame() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#000006";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const theme = getLevelTheme(level);
 
-  drawMap();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = theme.background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawLevelAtmosphere(theme);
+
+  drawMap(theme);
   drawPellets();
   drawPacman();
 
@@ -1468,7 +2441,7 @@ function drawGame() {
   drawLives();
 
   if (gameState === "start") {
-    drawOverlayScreen("VOICE AI PAC-MAN", "Say START / スタート", "Press ENTER");
+    drawOverlayScreen("VOICE AI PAC-MAN", `Unlocked Level ${getUnlockedLevel()}`, "ENTER Start / L Choose Level");
   }
 
   if (gameState === "paused") {
@@ -1479,8 +2452,24 @@ function drawGame() {
     drawOverlayScreen(countdownText, "Voice control ready");
   }
 
+  if (gameState === "stageintro") {
+    drawOverlayScreen(stageIntroTitle, stageIntroSubtitle, "Get ready");
+  }
+
   if (gameState === "gameover") {
     drawOverlayScreen("GAME OVER", "Say RESTART / もう一回", "Press ENTER");
+  }
+
+  if (gameState === "levelclear") {
+    drawOverlayScreen(`LEVEL ${level} COMPLETE!`, "Continue / Choose Level / Back", "Say CONTINUE or press ENTER");
+  }
+
+  if (gameState === "finalclear") {
+    drawOverlayScreen("ALL LEVELS COMPLETE!", "Research run complete", "Back to Start or Choose Level");
+  }
+
+  if (gameState === "levelselect") {
+    drawOverlayScreen("CHOOSE LEVEL", `Unlocked through Level ${getUnlockedLevel()}`, "Click a level or use voice");
   }
 }
 
@@ -1490,7 +2479,10 @@ function gameLoop() {
     eatPellets();
 
     for (const ghost of ghosts) {
-      if (level >= ghost.activeFromLevel) moveGhost(ghost);
+      if (level >= ghost.activeFromLevel) {
+        updateGhostRespawnTimers(ghost);
+        moveGhost(ghost);
+      }
     }
 
     checkGhostCollision();
@@ -1520,6 +2512,26 @@ function updateFullscreenButton() {
 document.addEventListener("keydown", function(event) {
   if (event.key === "Enter") {
     executeGameCommand(gameState === "gameover" ? "RESTART" : "START", "keyboard");
+  }
+
+  if (event.key === "Escape" || event.key === "b" || event.key === "B") {
+    if (gameState === "levelclear" || gameState === "finalclear" || gameState === "levelselect") {
+      executeGameCommand("BACK", "keyboard");
+    }
+  }
+
+  if (event.key === "l" || event.key === "L" || event.key === "c" || event.key === "C") {
+    if (gameState === "start" || gameState === "levelclear" || gameState === "finalclear" || gameState === "gameover") {
+      executeGameCommand("CHOOSE_LEVEL", "keyboard");
+    }
+  }
+
+  if (/^[0-9]$/.test(event.key)) {
+    const selectedLevel = event.key === "0" ? 10 : Number(event.key);
+
+    if (gameState === "levelselect") {
+      executeGameCommand(`LEVEL_${selectedLevel}`, "keyboard");
+    }
   }
 
   if (event.key === "p" || event.key === "P") {
@@ -1554,6 +2566,9 @@ document.addEventListener("keydown", function(event) {
 ui.voiceButton.addEventListener("click", startVoice);
 ui.fullscreenButton.addEventListener("click", toggleFullScreen);
 ui.resetDataButton.addEventListener("click", resetResearchData);
+ui.continueLevelButton.addEventListener("click", continueToNextLevel);
+ui.chooseLevelButton.addEventListener("click", showLevelSelectScreen);
+ui.backToStartButton.addEventListener("click", backToStart);
 
 document.addEventListener("fullscreenchange", updateFullscreenButton);
 
@@ -1580,9 +2595,12 @@ window.testVoiceParser = function() {
     "left",
     "レフト",
     "リフト",
+    "ラフト",
+    "らふと",
     "up",
     "app",
     "アップ",
+    "アプ",
     "down",
     "ダウン",
     "右に行って",
@@ -1594,6 +2612,14 @@ window.testVoiceParser = function() {
     "スタート",
     "ポーズ",
     "もう一回",
+    "continue",
+    "続ける",
+    "back",
+    "戻る",
+    "level one",
+    "レベル1",
+    "level ten",
+    "レベル10",
     "go to the left and then go down",
     "right then down",
     "右 左",

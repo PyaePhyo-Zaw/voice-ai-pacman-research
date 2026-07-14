@@ -19,30 +19,46 @@
     </header>
 
     <section id="playfield">
+      <aside id="scorePanel" class="arcadeScorePanel" aria-label="Arcade score information">
+        <div class="arcadeScoreItem">
+          <span class="label">Score</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="arcadeScoreItem">
+          <span class="label">Level</span>
+          <strong id="level">1</strong>
+        </div>
+        <div class="arcadeScoreItem">
+          <span class="label">Lives</span>
+          <strong id="lives">3</strong>
+        </div>
+        <div class="arcadeScoreItem">
+          <span class="label">High Score</span>
+          <strong id="highScore">0</strong>
+        </div>
+      </aside>
+
       <div id="screenFrame">
         <canvas id="game" aria-label="Voice controlled Pac-Man game"></canvas>
+        <div id="levelOverlay" class="levelOverlay hidden" aria-live="polite">
+          <div class="levelOverlayBox">
+            <p id="levelOverlayEyebrow">LEVEL CLEAR</p>
+            <h2 id="levelOverlayTitle">LEVEL COMPLETE!</h2>
+            <p id="levelOverlayMessage">Choose the next test action.</p>
+            <div id="levelOverlayActions" class="levelOverlayActions">
+              <button id="continueLevelButton" type="button">CONTINUE</button>
+              <button id="chooseLevelButton" type="button">CHOOSE LEVEL</button>
+              <button id="backToStartButton" type="button">BACK TO START</button>
+            </div>
+            <div id="levelSelectGrid" class="levelSelectGrid hidden" aria-label="Unlocked level selection"></div>
+          </div>
+        </div>
       </div>
 
       <aside id="sidePanel" aria-label="Game and research controls">
-        <section class="panelBlock">
-          <div class="panelTitle">Game</div>
+        <section class="panelBlock compactStatusPanel">
+          <div class="panelTitle">Status</div>
           <div class="statGrid">
-            <div>
-              <span class="label">Score</span>
-              <strong id="score">0</strong>
-            </div>
-            <div>
-              <span class="label">Level</span>
-              <strong id="level">1</strong>
-            </div>
-            <div>
-              <span class="label">Lives</span>
-              <strong id="lives">3</strong>
-            </div>
-            <div>
-              <span class="label">High Score</span>
-              <strong id="highScore">0</strong>
-            </div>
             <div>
               <span class="label">Best Level</span>
               <strong id="bestLevel">1</strong>
@@ -63,6 +79,8 @@
             Experimental with Web Speech API. True real-time multilingual recognition will be added later using Whisper API / OpenAI Realtime API.
           </p>
           <div id="voiceStatus" class="statusPill">Voice: idle</div>
+          <div id="voiceModeLine" class="voiceModeLine">Listening mode: English</div>
+          <div id="voiceDebug" class="voiceDebug">Browser support: unknown | Mic permission: unknown | Recognition state: idle | Language: en-US</div>
           <div class="readout">
             <span class="label">Heard</span>
             <div id="heard">...</div>
@@ -79,12 +97,21 @@
             <span>Total</span><strong id="totalCommands">0</strong>
             <span>Successful</span><strong id="successfulCommands">0</strong>
             <span>Unrecognized</span><strong id="failedCommands">0</strong>
+            <span>Success Rate</span><strong id="successRate">0%</strong>
             <span>English</span><strong id="englishCommands">0</strong>
             <span>Japanese</span><strong id="japaneseCommands">0</strong>
             <span>Katakana</span><strong id="katakanaCommands">0</strong>
             <span>Mixed</span><strong id="mixedCommands">0</strong>
+            <span>Unlocked</span><strong id="unlockedLevel">1</strong>
+            <span>Highest</span><strong id="highestLevelReached">1</strong>
+            <span>Cleared</span><strong id="completedLevelCount">0</strong>
+            <span>Survival</span><strong id="survivalTime">0s</strong>
             <span>Recognition</span><strong id="recognitionMode">mixed-cycle</strong>
             <span>Transcript Mode</span><strong id="transcriptMode">...</strong>
+            <span>English Rec.</span><strong id="englishRecognitionAttempts">0</strong>
+            <span>Japanese Rec.</span><strong id="japaneseRecognitionAttempts">0</strong>
+            <span>Switches</span><strong id="languageSwitchCount">0</strong>
+            <span>After Switch</span><strong id="successfulAfterLanguageSwitch">0</strong>
             <span>Avg Response</span><strong id="avgResponseTime">0 ms</strong>
           </div>
           <div class="miniLog">
